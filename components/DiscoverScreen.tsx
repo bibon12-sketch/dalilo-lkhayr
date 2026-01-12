@@ -14,11 +14,10 @@ const DEFAULT_CENTER: [number, number] = [44.8378, -0.5792]; // Bordeaux, France
 const DEFAULT_ZOOM = 13;
 
 /**
- * Pointing to the Vercel API route proxy.
- * This resolves the "Mixed Content" error (HTTPS -> HTTP) by handling
- * the request server-side.
+ * Updated to use the new local serverless proxy route.
+ * This resolves Mixed Content issues on Vercel (HTTPS -> HTTP).
  */
-const N8N_PROXY_ENDPOINT = "/api/n8n";
+const DISCOVERY_API_ENDPOINT = "/api/discover";
 
 const DiscoverScreen: React.FC<{ language: Language }> = ({ language }) => {
   const [activeFilter, setActiveFilter] = useState<'all' | 'mosque' | 'halal'>('all');
@@ -47,9 +46,7 @@ const DiscoverScreen: React.FC<{ language: Language }> = ({ language }) => {
   }, []);
 
   /**
-   * Triggers the n8n discovery via our local proxy.
-   * This ensures the request is sent over HTTPS to our own backend,
-   * which then forwards it to the HTTP n8n server.
+   * Triggers the discovery via the secure proxy endpoint.
    */
   const triggerDiscovery = useCallback(async (center: { lat: number, lng: number }) => {
     if (discoveringRef.current) return;
@@ -58,10 +55,10 @@ const DiscoverScreen: React.FC<{ language: Language }> = ({ language }) => {
     setIsDiscovering(true);
     setErrorStatus(null);
     
-    console.log(`[Sync] Triggering discovery via proxy: ${center.lat}, ${center.lng}`);
+    console.log(`[Sync] Triggering discovery: ${center.lat}, ${center.lng}`);
     
     try {
-      const response = await fetch(N8N_PROXY_ENDPOINT, {
+      const response = await fetch(DISCOVERY_API_ENDPOINT, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json'
@@ -73,18 +70,16 @@ const DiscoverScreen: React.FC<{ language: Language }> = ({ language }) => {
       });
 
       if (response.ok) {
-        console.log("[Sync] Success: n8n triggered successfully.");
+        console.log("[Sync] Discovery triggered successfully.");
         // Refresh local data from Supabase
         await fetchLocations();
       } else {
         const errorData = await response.json().catch(() => ({}));
-        const errorMsg = `[Sync] Proxy failed: ${response.status} ${errorData.error || ''}`;
-        console.error(errorMsg);
-        setErrorStatus("Discovery Error");
+        console.error(`[Sync] Request failed: ${response.status}`, errorData);
+        setErrorStatus("Discovery Unavailable");
       }
     } catch (error) {
-      const connError = "[Sync] Could not reach proxy endpoint.";
-      console.error(connError, error);
+      console.error("[Sync] Network error calling proxy:", error);
       setErrorStatus("Connection Error");
     } finally {
       discoveringRef.current = false;
@@ -92,13 +87,13 @@ const DiscoverScreen: React.FC<{ language: Language }> = ({ language }) => {
     }
   }, [fetchLocations]);
 
-  // Handle initialization
+  // Initial Load
   useEffect(() => {
     fetchLocations();
     triggerDiscovery({ lat: DEFAULT_CENTER[0], lng: DEFAULT_CENTER[1] });
   }, [fetchLocations, triggerDiscovery]);
 
-  // Request user geolocation
+  // Location Request
   useEffect(() => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -109,13 +104,13 @@ const DiscoverScreen: React.FC<{ language: Language }> = ({ language }) => {
             mapRef.current.setView(coords, DEFAULT_ZOOM, { animate: true });
           }
         },
-        () => console.warn("Location access denied."),
+        () => console.warn("Location permission denied."),
         { enableHighAccuracy: true }
       );
     }
   }, []);
 
-  // Map Lifecycle
+  // Map Initialization
   useEffect(() => {
     if (typeof (window as any).L !== 'undefined' && leafletMapRef.current && !mapRef.current) {
       const L = (window as any).L;
@@ -146,7 +141,7 @@ const DiscoverScreen: React.FC<{ language: Language }> = ({ language }) => {
     };
   }, [triggerDiscovery]);
 
-  // Update Markers
+  // Marker Management
   useEffect(() => {
     if (mapRef.current && typeof (window as any).L !== 'undefined') {
       const L = (window as any).L;
@@ -243,20 +238,20 @@ const DiscoverScreen: React.FC<{ language: Language }> = ({ language }) => {
         className="absolute inset-0 z-0 grayscale-[0.8] brightness-[1.05] contrast-[0.9]"
       ></div>
 
-      {/* Sync Status Overlay */}
+      {/* Sync State UI */}
       {(isDiscovering || errorStatus) && (
         <div className="absolute top-36 left-1/2 -translate-x-1/2 z-[1500] animate-8k w-max">
           <div className={`${errorStatus ? 'bg-red-500' : 'bg-[#1B3022]'} backdrop-blur-xl border border-white/20 px-6 py-3 rounded-full shadow-2xl flex items-center gap-3`}>
              {errorStatus ? <AlertTriangle size={14} className="text-white" /> : <Zap size={14} className="text-[#C5A059] animate-pulse" />}
              <span className="text-[10px] font-black text-white uppercase tracking-[0.2em]">
-               {errorStatus || "Syncing Locations..."}
+               {errorStatus || "Syncing with n8n..."}
              </span>
              {!errorStatus && <RefreshCw size={12} className="text-[#C5A059] animate-spin" />}
           </div>
         </div>
       )}
 
-      {/* HEADER */}
+      {/* HEADER SECTION */}
       <div className="absolute top-0 start-0 end-0 z-[1000] px-8 pt-[env(safe-area-inset-top,60px)] pb-10 flex flex-col gap-6 pointer-events-none backdrop-blur-[2px] bg-gradient-to-b from-white/30 to-transparent">
         <div className="flex items-center justify-between pointer-events-auto">
           <div className="text-start">
@@ -268,7 +263,7 @@ const DiscoverScreen: React.FC<{ language: Language }> = ({ language }) => {
              <button 
                onClick={handleManualSync}
                disabled={isDiscovering}
-               className={`w-11 h-11 bg-white border border-black/5 rounded-xl shadow-xl flex items-center justify-center transition-all active:scale-95 ${isDiscovering ? 'opacity-50' : 'text-[#1B3022]'}`}
+               className={`w-11 h-11 bg-white border border-black/5 rounded-xl shadow-xl flex items-center justify-center transition-all active:scale-95 ${isDiscovering ? 'opacity-50 cursor-not-allowed' : 'text-[#1B3022]'}`}
              >
                <RefreshCw size={18} className={isDiscovering ? 'animate-spin' : ''} />
              </button>
@@ -288,7 +283,7 @@ const DiscoverScreen: React.FC<{ language: Language }> = ({ language }) => {
 
       <button onClick={handleCenterOnUser} className="absolute bottom-52 end-8 z-[1000] w-12 h-12 bg-white rounded-2xl shadow-2xl border border-gray-100 flex items-center justify-center text-[#1B3022] transition-all active:scale-90"><LocateFixed size={20} /></button>
 
-      {/* Bottom Detail Sheet */}
+      {/* Detail Slide Up Sheet */}
       <div 
         className={`absolute bottom-0 start-0 end-0 z-[2000] transition-all duration-700 ease-[cubic-bezier(0.23,1,0.32,1)] ${selectedLocation ? 'translate-y-0' : 'translate-y-[85%]'}`}
         style={{ height: sheetExpanded ? '60vh' : '10vh' }}
@@ -298,7 +293,7 @@ const DiscoverScreen: React.FC<{ language: Language }> = ({ language }) => {
           
           {!selectedLocation ? (
             <div className="h-full flex items-center justify-center">
-               <p className="text-[10px] font-black text-[#1B3022]/20 uppercase tracking-[0.4em]">Explore Nearby</p>
+               <p className="text-[10px] font-black text-[#1B3022]/20 uppercase tracking-[0.4em]">Explore nearby halal services</p>
             </div>
           ) : (
             <div className="flex flex-col h-full text-start">
