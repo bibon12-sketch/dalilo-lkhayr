@@ -36,7 +36,6 @@ const App: React.FC = () => {
     }
   }, [appState]);
 
-  // Translation helper with English fallback
   const t = (key: string) => {
     const entry = TRANSLATIONS[key];
     if (!entry) return key;
@@ -82,6 +81,9 @@ const App: React.FC = () => {
       );
     }
 
+    // Only render tabs when in HOME app state
+    if (appState !== AppState.HOME && appState !== AppState.ADHAN) return null;
+
     switch (activeTab) {
       case AppState.HOME: 
         return <HomeScreen 
@@ -106,7 +108,7 @@ const App: React.FC = () => {
     }
   };
 
-  const showNav = ![AppState.SPLASH, AppState.LANGUAGE_SELECTION, AppState.ONBOARDING, AppState.ADHAN].includes(appState);
+  const showNav = appState === AppState.HOME;
   const isZadActive = activeTab === AppState.ZAD;
   const isRtl = language === 'ar';
 
