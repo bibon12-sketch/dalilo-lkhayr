@@ -1,0 +1,9 @@
+
+{
+  "rewrites": [
+    {
+      "source": "/api/discover",
+      "destination": "http://85.215.168.54:5678/webhook/discover"
+    }
+  ]
+}

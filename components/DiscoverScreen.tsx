@@ -14,8 +14,8 @@ const DEFAULT_CENTER: [number, number] = [44.8378, -0.5792]; // Bordeaux, France
 const DEFAULT_ZOOM = 13;
 
 /**
- * Updated to use the new local serverless proxy route.
- * This resolves Mixed Content issues on Vercel (HTTPS -> HTTP).
+ * Using the relative proxy path defined in vercel.json.
+ * Vercel handles the redirection to http://85.215.168.54:5678/webhook/discover server-side.
  */
 const DISCOVERY_API_ENDPOINT = "/api/discover";
 
@@ -55,7 +55,7 @@ const DiscoverScreen: React.FC<{ language: Language }> = ({ language }) => {
     setIsDiscovering(true);
     setErrorStatus(null);
     
-    console.log(`[Sync] Triggering discovery: ${center.lat}, ${center.lng}`);
+    console.log(`[Sync] Triggering discovery via proxy: ${center.lat}, ${center.lng}`);
     
     try {
       const response = await fetch(DISCOVERY_API_ENDPOINT, {
