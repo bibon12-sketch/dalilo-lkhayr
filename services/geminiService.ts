@@ -1,11 +1,10 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
-
-// Initialize the Gemini client using process.env.API_KEY directly as per guidelines
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const generateDailyPlan = async (gender: string, goal: string) => {
   try {
+    // Instantiate inside the function to avoid top-level errors if API_KEY is undefined on load
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `بصفتك خبيراً في العلوم الشرعية، صمم خطة يومية للمسلم (${gender === 'brother' ? 'أخي' : 'أختي'}) تهدف إلى: ${goal}. 
@@ -32,7 +31,6 @@ export const generateDailyPlan = async (gender: string, goal: string) => {
         }
       }
     });
-    // Access text property directly (not a method) and handle potential undefined
     return JSON.parse(response.text || "{}");
   } catch (error) {
     console.error("Error generating daily plan:", error);
@@ -42,6 +40,8 @@ export const generateDailyPlan = async (gender: string, goal: string) => {
 
 export const getFiqhGuidance = async (query: string) => {
   try {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: query,
@@ -49,7 +49,6 @@ export const getFiqhGuidance = async (query: string) => {
         systemInstruction: "أنت عالم فقيه مسلم معتدل، تقدم إجابات مبنية على الأدلة الشرعية من الكتاب والسنة بأسلوب ميسر ولطيف. ابدأ دائماً بـ 'بسم الله الرحمن الرحيم'.",
       }
     });
-    // Access text property directly (not a method)
     return response.text || "عذراً، لم يتم العثور على استجابة.";
   } catch (error) {
     console.error("Error fetching fiqh guidance:", error);

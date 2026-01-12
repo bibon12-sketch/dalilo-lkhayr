@@ -110,7 +110,10 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ gender, language, onNavigate, s
         <div className="grid grid-cols-2 gap-6">
           {HOME_CARDS.slice(0, 4).map((card) => (
             <button key={card.id} onClick={() => onNavigate(card.id as AppState)} className="bg-white border border-black/5 rounded-[2.2rem] p-8 text-start group shadow-sm hover:shadow-xl transition-all active:scale-95">
-              <div className="w-12 h-12 rounded-xl bg-gray-50 flex items-center justify-center mb-6 group-hover:bg-[#2E3B23] group-hover:text-white transition-all duration-500">{React.cloneElement(card.icon as React.ReactElement, { size: 22 })}</div>
+              {/* Added React.isValidElement and cast to React.ReactElement<any> to fix size prop error */}
+              <div className="w-12 h-12 rounded-xl bg-gray-50 flex items-center justify-center mb-6 group-hover:bg-[#2E3B23] group-hover:text-white transition-all duration-500">
+                {React.isValidElement(card.icon) && React.cloneElement(card.icon as React.ReactElement<any>, { size: 22 })}
+              </div>
               <h4 className="text-xl font-amiri font-bold text-[#2E3B23] mb-0.5">{t(card.titleKey)}</h4>
               <p className="text-[8px] font-bold text-[#C5A059] uppercase tracking-widest opacity-60">{t(card.subtitleKey)}</p>
             </button>
