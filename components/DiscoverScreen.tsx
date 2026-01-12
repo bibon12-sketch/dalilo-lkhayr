@@ -207,10 +207,13 @@ const DiscoverScreen: React.FC<{ language: Language }> = ({ language }) => {
 
   return (
     <div className="h-screen w-full relative bg-[#F5F5F5] overflow-hidden flex flex-col">
-      <div 
-        ref={googleMapDivRef} 
-        className="absolute inset-0 z-0"
-      ></div>
+      {/* Map Container - Fix: Changed from absolute to flexbox distribution for better mobile rendering */}
+      <div className="flex-1 relative z-0">
+        <div 
+          ref={googleMapDivRef} 
+          className="w-full h-full"
+        ></div>
+      </div>
 
       {/* Sync State Overlay */}
       {(isDiscovering || errorStatus) && (
