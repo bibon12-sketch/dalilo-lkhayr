@@ -10,29 +10,32 @@ import { supabaseService } from '../services/supabaseService';
 import { LocationData, Language } from '../types';
 import { TRANSLATIONS, COLORS } from '../constants';
 
-const DEFAULT_CENTER: [number, number] = [44.8378, -0.5792]; // Bordeaux, France
+// Fix: Declare google as any to resolve "Cannot find namespace 'google'" and "Cannot find name 'google'" errors.
+declare var google: any;
+
+const DEFAULT_CENTER = { lat: 44.8378, lng: -0.5792 }; // Bordeaux, France
 const DEFAULT_ZOOM = 13;
 
-/**
- * Using the relative proxy path defined in vercel.json.
- * Vercel handles the redirection to http://85.215.168.54:5678/webhook/discover server-side.
- */
 const DISCOVERY_API_ENDPOINT = "/api/discover";
 
 const DiscoverScreen: React.FC<{ language: Language }> = ({ language }) => {
   const [activeFilter, setActiveFilter] = useState<'all' | 'mosque' | 'halal'>('all');
   const [locations, setLocations] = useState<LocationData[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<LocationData | null>(null);
-  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
+  // Fix: Use any for google.maps.LatLngLiteral type to resolve missing namespace error
+  const [userLocation, setUserLocation] = useState<any | null>(null);
   const [sheetExpanded, setSheetExpanded] = useState(false);
   const [isDiscovering, setIsDiscovering] = useState(false);
   const [errorStatus, setErrorStatus] = useState<string | null>(null);
   
-  const discoveringRef = useRef(false);
-  const mapRef = useRef<any>(null);
-  const leafletMapRef = useRef<HTMLDivElement>(null);
-  const userMarkerRef = useRef<any>(null);
+  // Fix: Use any for google.maps.Map type to resolve missing namespace error
+  const mapRef = useRef<any | null>(null);
+  const googleMapDivRef = useRef<HTMLDivElement>(null);
+  // Fix: Use any[] for google.maps.Marker[] type to resolve missing namespace error
   const markersRef = useRef<any[]>([]);
+  // Fix: Use any for google.maps.Marker type to resolve missing namespace error
+  const userMarkerRef = useRef<any | null>(null);
+  const discoveringRef = useRef(false);
 
   const t = (key: string) => TRANSLATIONS[key]?.[language] || key;
 
@@ -45,9 +48,6 @@ const DiscoverScreen: React.FC<{ language: Language }> = ({ language }) => {
     }
   }, []);
 
-  /**
-   * Triggers the discovery via the secure proxy endpoint.
-   */
   const triggerDiscovery = useCallback(async (center: { lat: number, lng: number }) => {
     if (discoveringRef.current) return;
     
@@ -55,31 +55,19 @@ const DiscoverScreen: React.FC<{ language: Language }> = ({ language }) => {
     setIsDiscovering(true);
     setErrorStatus(null);
     
-    console.log(`[Sync] Triggering discovery via proxy: ${center.lat}, ${center.lng}`);
-    
     try {
       const response = await fetch(DISCOVERY_API_ENDPOINT, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          lat: center.lat,
-          lng: center.lng
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lat: center.lat, lng: center.lng })
       });
 
       if (response.ok) {
-        console.log("[Sync] Discovery triggered successfully.");
-        // Refresh local data from Supabase
         await fetchLocations();
       } else {
-        const errorData = await response.json().catch(() => ({}));
-        console.error(`[Sync] Request failed: ${response.status}`, errorData);
         setErrorStatus("Discovery Unavailable");
       }
     } catch (error) {
-      console.error("[Sync] Network error calling proxy:", error);
       setErrorStatus("Connection Error");
     } finally {
       discoveringRef.current = false;
@@ -87,21 +75,41 @@ const DiscoverScreen: React.FC<{ language: Language }> = ({ language }) => {
     }
   }, [fetchLocations]);
 
-  // Initial Load
+  // Google Maps Initialization
   useEffect(() => {
-    fetchLocations();
-    triggerDiscovery({ lat: DEFAULT_CENTER[0], lng: DEFAULT_CENTER[1] });
-  }, [fetchLocations, triggerDiscovery]);
+    // Fix: Access window.google with any casting to handle missing property on Window type
+    if (googleMapDivRef.current && !mapRef.current && (window as any).google) {
+      mapRef.current = new google.maps.Map(googleMapDivRef.current, {
+        center: DEFAULT_CENTER,
+        zoom: DEFAULT_ZOOM,
+        disableDefaultUI: true,
+        styles: [
+          { "featureType": "all", "elementType": "labels.text.fill", "stylers": [{ "color": "#1B3022" }] },
+          { "featureType": "landscape", "elementType": "all", "stylers": [{ "color": "#F5F5F5" }] },
+          { "featureType": "water", "elementType": "all", "stylers": [{ "color": "#E5E7EB" }] },
+          { "featureType": "poi", "stylers": [{ "visibility": "off" }] }
+        ]
+      });
 
-  // Location Request
+      mapRef.current.addListener('idle', () => {
+        const center = mapRef.current?.getCenter();
+        if (center) {
+          triggerDiscovery({ lat: center.lat(), lng: center.lng() });
+        }
+      });
+    }
+  }, [triggerDiscovery]);
+
+  // User Geolocation
   useEffect(() => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          const coords: [number, number] = [pos.coords.latitude, pos.coords.longitude];
+          const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
           setUserLocation(coords);
           if (mapRef.current) {
-            mapRef.current.setView(coords, DEFAULT_ZOOM, { animate: true });
+            mapRef.current.setCenter(coords);
+            mapRef.current.setZoom(15);
           }
         },
         () => console.warn("Location permission denied."),
@@ -110,112 +118,78 @@ const DiscoverScreen: React.FC<{ language: Language }> = ({ language }) => {
     }
   }, []);
 
-  // Map Initialization
+  // Sync Markers
   useEffect(() => {
-    if (typeof (window as any).L !== 'undefined' && leafletMapRef.current && !mapRef.current) {
-      const L = (window as any).L;
-      mapRef.current = L.map(leafletMapRef.current, { 
-        zoomControl: false, 
-        attributionControl: false 
-      }).setView(DEFAULT_CENTER, DEFAULT_ZOOM);
-      
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { 
-        maxZoom: 19 
-      }).addTo(mapRef.current);
+    // Fix: Access window.google with any casting to handle missing property on Window type
+    if (!mapRef.current || !(window as any).google) return;
 
-      mapRef.current.on('moveend', () => {
-        const center = mapRef.current.getCenter();
-        triggerDiscovery({ lat: center.lat, lng: center.lng });
-      });
+    // Clear old markers
+    markersRef.current.forEach(m => m.setMap(null));
+    markersRef.current = [];
 
-      setTimeout(() => {
-        if (mapRef.current) mapRef.current.invalidateSize();
-      }, 300);
-    }
-
-    return () => {
-      if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
-      }
-    };
-  }, [triggerDiscovery]);
-
-  // Marker Management
-  useEffect(() => {
-    if (mapRef.current && typeof (window as any).L !== 'undefined') {
-      const L = (window as any).L;
-      markersRef.current.forEach(m => mapRef.current.removeLayer(m));
-      markersRef.current = [];
-
-      if (userLocation) {
-        if (userMarkerRef.current) {
-          userMarkerRef.current.setLatLng(userLocation);
-        } else {
-          const userIcon = L.divIcon({
-            html: `<div class="w-8 h-8 bg-blue-500 border-4 border-white rounded-full shadow-2xl animate-pulse"></div>`,
-            className: 'user-location-marker',
-            iconSize: [32, 32],
-            iconAnchor: [16, 16]
-          });
-          userMarkerRef.current = L.marker(userLocation, { icon: userIcon }).addTo(mapRef.current);
-        }
-      }
-
-      locations
-        .filter(loc => activeFilter === 'all' || loc.type === activeFilter)
-        .forEach(loc => {
-          const isMosque = loc.type === 'mosque';
-          const markerColor = isMosque ? '#1B3022' : '#C5A059';
-          
-          const iconHtml = `
-            <div class="marker-container" style="
-              background-color: ${markerColor}; 
-              width: 48px; 
-              height: 48px; 
-              border-radius: 24px; 
-              border: 3px solid white; 
-              display: flex; 
-              align-items: center; 
-              justify-content: center; 
-              color: white; 
-              box-shadow: 0 10px 25px rgba(0,0,0,0.2);
-            ">
-              ${isMosque 
-                ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 20v-2a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2"></path><rect width="10" height="12" x="7" y="4" rx="2"></rect><path d="M12 11h.01"></path></svg>' 
-                : '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"></path><path d="M3 6h18"></path><path d="M16 10a4 4 0 0 1-8 0"></path></svg>'
-              }
-            </div>`;
-            
-          const customIcon = L.divIcon({ 
-            html: iconHtml, 
-            className: 'custom-map-icon', 
-            iconSize: [48, 48], 
-            iconAnchor: [24, 48] 
-          });
-          
-          const marker = L.marker([loc.lat, loc.lng], { icon: customIcon }).addTo(mapRef.current);
-          marker.on('click', () => {
-            setSelectedLocation(loc);
-            setSheetExpanded(true);
-            mapRef.current.setView([loc.lat, loc.lng], 15, { animate: true });
-          });
-          markersRef.current.push(marker);
+    // User Marker
+    if (userLocation) {
+      if (userMarkerRef.current) {
+        userMarkerRef.current.setPosition(userLocation);
+      } else {
+        userMarkerRef.current = new google.maps.Marker({
+          position: userLocation,
+          map: mapRef.current,
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            fillColor: '#3B82F6',
+            fillOpacity: 1,
+            strokeColor: '#FFFFFF',
+            strokeWeight: 4,
+            scale: 10,
+          },
+          title: "Your Location"
         });
+      }
     }
+
+    // Business Markers
+    locations
+      .filter(loc => activeFilter === 'all' || loc.type === activeFilter)
+      .forEach(loc => {
+        const isMosque = loc.type === 'mosque';
+        const color = isMosque ? '#1B3022' : '#C5A059';
+        
+        const marker = new google.maps.Marker({
+          position: { lat: loc.lat, lng: loc.lng },
+          map: mapRef.current!,
+          title: loc.name_en,
+          icon: {
+            path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
+            fillColor: color,
+            fillOpacity: 1,
+            strokeColor: '#FFFFFF',
+            strokeWeight: 2,
+            scale: 8,
+          }
+        });
+
+        marker.addListener('click', () => {
+          setSelectedLocation(loc);
+          setSheetExpanded(true);
+          mapRef.current?.panTo({ lat: loc.lat, lng: loc.lng });
+        });
+
+        markersRef.current.push(marker);
+      });
   }, [locations, userLocation, activeFilter]);
 
   const handleCenterOnUser = () => {
-    const center = userLocation || DEFAULT_CENTER;
-    if (mapRef.current) {
-      mapRef.current.setView(center, DEFAULT_ZOOM + 2, { animate: true });
+    if (mapRef.current && userLocation) {
+      mapRef.current.panTo(userLocation);
+      mapRef.current.setZoom(15);
     }
   };
 
   const handleManualSync = () => {
-    if (mapRef.current) {
-      const center = mapRef.current.getCenter();
-      triggerDiscovery({ lat: center.lat, lng: center.lng });
+    const center = mapRef.current?.getCenter();
+    if (center) {
+      triggerDiscovery({ lat: center.lat(), lng: center.lng() });
     }
   };
 
@@ -234,13 +208,13 @@ const DiscoverScreen: React.FC<{ language: Language }> = ({ language }) => {
   return (
     <div className="h-screen w-full relative bg-[#F5F5F5] overflow-hidden flex flex-col">
       <div 
-        ref={leafletMapRef} 
-        className="absolute inset-0 z-0 grayscale-[0.8] brightness-[1.05] contrast-[0.9]"
+        ref={googleMapDivRef} 
+        className="absolute inset-0 z-0"
       ></div>
 
-      {/* Sync State UI */}
+      {/* Sync State Overlay */}
       {(isDiscovering || errorStatus) && (
-        <div className="absolute top-36 left-1/2 -translate-x-1/2 z-[1500] animate-8k w-max">
+        <div className="absolute top-36 left-1/2 -translate-x-1/2 z-[1000] animate-8k w-max">
           <div className={`${errorStatus ? 'bg-red-500' : 'bg-[#1B3022]'} backdrop-blur-xl border border-white/20 px-6 py-3 rounded-full shadow-2xl flex items-center gap-3`}>
              {errorStatus ? <AlertTriangle size={14} className="text-white" /> : <Zap size={14} className="text-[#C5A059] animate-pulse" />}
              <span className="text-[10px] font-black text-white uppercase tracking-[0.2em]">
